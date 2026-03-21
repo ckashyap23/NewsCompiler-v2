@@ -1,0 +1,4 @@
+interface:
+  display_name: "Topic Research Summarizer"
+  short_description: "Research a topic and summarize sources"
+  default_prompt: "Use $topic-research-summarizer to research a topic, select the most relevant sources, and produce a concise sourced summary."
