@@ -10,12 +10,14 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Create a `.env` file with:
+Copy `.env.example` to `.env` and fill in your values:
 
-```
-OPENAI_API_KEY=your-openai-key
-GMAIL_EMAIL=your@gmail.com
-GMAIL_APP_PASSWORD=your-16-char-app-password
+```bash
+# Windows
+copy .env.example .env
+
+# macOS / Linux
+cp .env.example .env
 ```
 
 ## Usage
