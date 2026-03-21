@@ -8,19 +8,82 @@ Usage:
 Sender email is read from GMAIL_EMAIL in .env.
 Password (Gmail App Password) is read from GMAIL_APP_PASSWORD in .env.
 """
+import os
+import ssl
+import socket
+import sys
 import argparse
 import smtplib
-import sys
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+from pathlib import Path
+from email.message import EmailMessage
 
 from dotenv import load_dotenv
-import os
-
-load_dotenv()
 
 GMAIL_SMTP_HOST = "smtp.gmail.com"
 GMAIL_SMTP_PORT = 587
+GMAIL_SMTP_SSL_PORT = 465
+DEFAULT_TIMEOUT_SECONDS = 20
+
+ENV_PATH = Path(__file__).resolve().with_name(".env")
+load_dotenv(dotenv_path=ENV_PATH)
+
+
+def _clean_env_value(name: str) -> str:
+    value = (os.getenv(name) or "").strip()
+    if value.startswith(("'", '"')) and value.endswith(("'", '"')) and len(value) >= 2:
+        value = value[1:-1]
+    if name == "GMAIL_APP_PASSWORD":
+        value = value.replace(" ", "")
+    return value.strip()
+
+
+def _build_message(sender: str, recipients: list[str], subject: str, text: str) -> EmailMessage:
+    msg = EmailMessage()
+    msg["From"] = sender
+    msg["To"] = ", ".join(recipients)
+    msg["Subject"] = subject
+    msg.set_content(text)
+    return msg
+
+
+def _send_via_starttls(email: str, password: str, recipients: list[str], msg: EmailMessage) -> None:
+    context = ssl.create_default_context()
+    with smtplib.SMTP(GMAIL_SMTP_HOST, GMAIL_SMTP_PORT, timeout=DEFAULT_TIMEOUT_SECONDS) as smtp:
+        smtp.ehlo()
+        smtp.starttls(context=context)
+        smtp.ehlo()
+        smtp.login(email, password)
+        smtp.send_message(msg, from_addr=email, to_addrs=recipients)
+
+
+def _send_via_ssl(email: str, password: str, recipients: list[str], msg: EmailMessage) -> None:
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(
+        GMAIL_SMTP_HOST,
+        GMAIL_SMTP_SSL_PORT,
+        timeout=DEFAULT_TIMEOUT_SECONDS,
+        context=context,
+    ) as smtp:
+        smtp.login(email, password)
+        smtp.send_message(msg, from_addr=email, to_addrs=recipients)
+
+
+def _raise_helpful_smtp_error(exc: Exception) -> None:
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        raise RuntimeError(
+            "Gmail rejected the login. Confirm 2-Step Verification is enabled and "
+            "use a Gmail App Password in GMAIL_APP_PASSWORD, not your regular password."
+        ) from exc
+    if isinstance(exc, (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, socket.timeout, TimeoutError)):
+        raise RuntimeError(
+            "Could not connect to Gmail SMTP. Check internet access, firewall/VPN rules, "
+            "or whether your network blocks ports 587/465."
+        ) from exc
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        raise RuntimeError("Gmail refused one or more recipient addresses.") from exc
+    if isinstance(exc, smtplib.SMTPException):
+        raise RuntimeError(f"Gmail SMTP error: {exc}") from exc
+    raise
 
 
 def send_email(
@@ -40,8 +103,8 @@ def send_email(
         RuntimeError: If GMAIL_EMAIL or GMAIL_APP_PASSWORD are not set.
         smtplib.SMTPException: On SMTP errors.
     """
-    email = (os.getenv("GMAIL_EMAIL") or "").strip()
-    password = (os.getenv("GMAIL_APP_PASSWORD") or "").replace(" ", "").strip()
+    email = _clean_env_value("GMAIL_EMAIL")
+    password = _clean_env_value("GMAIL_APP_PASSWORD")
 
     if not email:
         raise RuntimeError("GMAIL_EMAIL is not set in .env")
@@ -50,16 +113,16 @@ def send_email(
     if not recipients:
         raise ValueError("At least one recipient is required")
 
-    msg = MIMEMultipart()
-    msg["From"] = email
-    msg["To"] = ", ".join(recipients)
-    msg["Subject"] = subject
-    msg.attach(MIMEText(text, "plain"))
+    msg = _build_message(email, recipients, subject, text)
 
-    with smtplib.SMTP(GMAIL_SMTP_HOST, GMAIL_SMTP_PORT) as smtp:
-        smtp.starttls()
-        smtp.login(email, password)
-        smtp.sendmail(email, recipients, msg.as_string())
+    try:
+        _send_via_starttls(email, password, recipients, msg)
+    except Exception as starttls_exc:
+        try:
+            _send_via_ssl(email, password, recipients, msg)
+        except Exception as ssl_exc:
+            preferred_exc = ssl_exc if isinstance(ssl_exc, smtplib.SMTPException) else starttls_exc
+            _raise_helpful_smtp_error(preferred_exc)
 
 
 def main() -> int:
