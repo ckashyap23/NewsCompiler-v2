@@ -15,7 +15,10 @@ Research a topic with a repeatable search-screen-summarize workflow. Expand the 
 
 - Identify whether the user wants an explainer, latest update, comparison, source list, or decision brief.
 - Infer a reasonable scope when the request is slightly underspecified.
-- Ask a clarifying question only when the ambiguity would materially change the search strategy or the answer format.
+- Do not ask clarifying questions in one-shot research runs. Make the best reasonable assumptions, state them briefly, and continue.
+- When a request is ambiguous, prefer a broad-but-useful answer over a follow-up question.
+- If source selection is unclear, prioritize primary sources first and add high-quality secondary coverage only for corroboration or important context.
+- If a time window is relative, resolve it using the date supplied in the user request or runtime prompt; otherwise use the current date and state the assumed window briefly.
 - Treat freshness as important whenever the topic could have changed recently.
 
 ### 2. Plan the search set
@@ -47,6 +50,7 @@ Research a topic with a repeatable search-screen-summarize workflow. Expand the 
 - Lead with the direct answer or top takeaway.
 - Follow with the key supporting points in a compact structure that matches the request.
 - Include source links in the final answer.
+- Never return only a question or request for clarification when a best-effort summary can be produced.
 - Call out uncertainty, incomplete evidence, or unresolved conflicts when present.
 - Keep quotations short and use paraphrase by default.
 
@@ -57,21 +61,6 @@ Research a topic with a repeatable search-screen-summarize workflow. Expand the 
 - Include dates when the topic is time-sensitive.
 - Make it explicit when a point is an inference.
 - Say when the evidence is insufficient.
-
-## Output Shape
-
-When the host requests structured output, format the final answer to align with these logical fields:
-
-- `summary_markdown`: A concise sourced summary in Markdown.
-- `subject`: A short email-friendly subject line based on the topic.
-- `sources`: A compact list of the strongest supporting sources used for the summary.
-
-For `sources`:
-
-- Include only the most relevant sources you actually relied on.
-- Prefer a small high-quality set over a long list.
-- Include a title and URL for each source.
-- Include a date when it materially affects trust, timeliness, or interpretation.
 
 ## Example Triggers
 
