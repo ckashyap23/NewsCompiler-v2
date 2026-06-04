@@ -1,0 +1,40 @@
+# Render deployment - two cron jobs sharing the same repo
+#
+# Required env vars (set in Render dashboard for each service):
+#
+#  BOTH JOBS:
+#    DATABASE_URL          postgresql://... (Supabase connection URL)
+#
+#  DAILY RESEARCH (cnews-daily):
+#    OPENAI_API_KEY        OpenAI API key
+#    GMAIL_EMAIL           Gmail sender address
+#    GMAIL_APP_PASSWORD    Gmail App Password (no spaces)
+#    RECIPIENT_EMAILS      Space-separated list: "a@x.com b@y.com"
+#    RESEARCH_TOPIC        Optional - leave blank for weekday rotation
+#
+#  WEEKLY DIGEST (cnews-weekly-digest):
+#    DATABASE_URL          postgresql://... (same Supabase connection URL)
+#    OPENAI_API_KEY        Same key can be used by both daily and weekly jobs
+#    OPENAI_NEWSLETTER_MODEL Optional; defaults to gpt-4o-mini
+#    WEEKLY_DIGEST_DAYS    Number of calendar days to include, e.g. 7
+#    RECIPIENT_EMAILS      Optional weekly digest email recipients
+#    LINKEDIN_AUTHOR_URN   urn:li:person:<member_id>
+#    LINKEDIN_ACCESS_TOKEN Access token from LinkedIn OAuth flow
+#    LINKEDIN_API_VERSION  Optional; defaults in code
+
+services:
+  - type: cron
+    name: cnews-daily
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python orchestrator.py
+    schedule: "0 9 * * *"   # 9 AM UTC daily
+
+  - type: cron
+    name: cnews-weekly-digest
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python weekly_digest.py
+    schedule: "0 8 * * 0"   # 8 AM UTC every Sunday

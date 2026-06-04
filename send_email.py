@@ -8,14 +8,14 @@ Usage:
 Sender email is read from GMAIL_EMAIL in .env.
 Password (Gmail App Password) is read from GMAIL_APP_PASSWORD in .env.
 """
-import os
-import ssl
-import socket
-import sys
 import argparse
+import os
 import smtplib
-from pathlib import Path
+import socket
+import ssl
+import sys
 from email.message import EmailMessage
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -91,18 +91,7 @@ def send_email(
     recipients: list[str],
     subject: str = "Message",
 ) -> None:
-    """
-    Send an email via Gmail to the given recipients.
-
-    Args:
-        text: The body of the email.
-        recipients: List of recipient email addresses.
-        subject: Email subject line.
-
-    Raises:
-        RuntimeError: If GMAIL_EMAIL or GMAIL_APP_PASSWORD are not set.
-        smtplib.SMTPException: On SMTP errors.
-    """
+    """Send an email via Gmail to the given recipients."""
     email = _clean_env_value("GMAIL_EMAIL")
     password = _clean_env_value("GMAIL_APP_PASSWORD")
 
@@ -129,21 +118,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Send email via Gmail to a list of recipients"
     )
-    parser.add_argument(
-        "text",
-        help="The email body text",
-    )
-    parser.add_argument(
-        "recipients",
-        nargs="+",
-        help="One or more recipient email addresses",
-    )
-    parser.add_argument(
-        "-s",
-        "--subject",
-        default="Message",
-        help="Email subject (default: Message)",
-    )
+    parser.add_argument("text", help="The email body text")
+    parser.add_argument("recipients", nargs="+", help="One or more recipient email addresses")
+    parser.add_argument("-s", "--subject", default="Message", help="Email subject (default: Message)")
     args = parser.parse_args()
 
     try:

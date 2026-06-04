@@ -1,0 +1,7 @@
+interface:
+  display_name: "Topic Newsletter Compiler"
+  short_description: "Analyze research entries and compile a professional newsletter with trends and highlights"
+  default_prompt: |
+    Use $topic-newsletter-compiler to analyze the provided week of research entries.
+    Identify key trends, extract top highlights, and compile them into a professional newsletter suitable for LinkedIn.
+    Return structured JSON with trends, highlights, implications, and formatted newsletter content.

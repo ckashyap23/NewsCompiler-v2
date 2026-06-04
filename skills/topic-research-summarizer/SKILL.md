@@ -58,6 +58,21 @@ Research a topic with a repeatable search-screen-summarize workflow. Expand the 
 - Make it explicit when a point is an inference.
 - Say when the evidence is insufficient.
 
+## Output Shape
+
+When the host requests structured output, format the final answer to align with these logical fields:
+
+- `summary_markdown`: A concise sourced summary in Markdown.
+- `subject`: A short email-friendly subject line based on the topic.
+- `sources`: A compact list of the strongest supporting sources used for the summary.
+
+For `sources`:
+
+- Include only the most relevant sources you actually relied on.
+- Prefer a small high-quality set over a long list.
+- Include a title and URL for each source.
+- Include a date when it materially affects trust, timeliness, or interpretation.
+
 ## Example Triggers
 
 - "Research the latest changes to India's semiconductor policy and summarize them."
