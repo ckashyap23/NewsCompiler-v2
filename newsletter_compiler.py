@@ -1,33 +1,62 @@
-"""
-Newsletter compiler: Use OpenAI to analyze recent research data and create a newsletter.
-
-This module integrates with the skill runtime to process research entries using
-the "topic-newsletter-compiler" skill with OpenAI as the backend.
-"""
+"""Compile stored research entries into a weekly newsletter with OpenAI."""
 import json
-import os
 import logging
 from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 
-load_dotenv()
+from llm_provider import get_llm_config
 
-from skill_runtime import (
-    SkillRequest,
-    SkillRuntimeError,
-    ToolPolicy,
-    load_schema,
-    load_skill,
-    normalize_payload,
-)
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent
 DEFAULT_SKILL_PATH = REPO_ROOT / "skills" / "topic-newsletter-compiler" / "SKILL.md"
 DEFAULT_SCHEMA_PATH = REPO_ROOT / "schemas" / "newsletter_compiler_result.json"
+
+
+class NewsletterCompilerError(RuntimeError):
+    """Raised when newsletter compilation cannot complete."""
+
+
+def _load_text_file(path: str | Path, label: str) -> str:
+    resolved = Path(path)
+    if not resolved.exists():
+        raise FileNotFoundError(f"{label} file not found: {resolved}")
+
+    text = resolved.read_text(encoding="utf-8").strip()
+    if not text:
+        raise NewsletterCompilerError(f"{label} file is empty: {resolved}")
+    return text
+
+
+def _load_schema(path: str | Path) -> dict:
+    resolved = Path(path)
+    if not resolved.exists():
+        raise FileNotFoundError(f"Schema file not found: {resolved}")
+    return json.loads(resolved.read_text(encoding="utf-8"))
+
+
+def _validate_newsletter_payload(payload: dict, schema: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise NewsletterCompilerError("OpenAI backend did not return a JSON object.")
+
+    required = schema.get("required") or []
+    for field in required:
+        if field not in payload:
+            raise NewsletterCompilerError(f"Newsletter result is missing `{field}`.")
+
+    for field in ("newsletter_title", "opening_hook", "implications", "newsletter_markdown"):
+        if not isinstance(payload.get(field), str) or not payload[field].strip():
+            raise NewsletterCompilerError(f"`{field}` must be a non-empty string.")
+
+    for field in ("key_trends", "top_highlights", "topics_covered"):
+        if not isinstance(payload.get(field), list):
+            raise NewsletterCompilerError(f"`{field}` must be a list.")
+
+    return payload
 
 
 def _build_newsletter_prompt(research_entries: list[dict]) -> str:
@@ -42,64 +71,6 @@ def _build_newsletter_prompt(research_entries: list[dict]) -> str:
     )
 
 
-class OpenAINewsletterBackend:
-    """OpenAI backend for newsletter compilation."""
-    name = "openai"
-
-    def __init__(self, tool_policy: ToolPolicy):
-        self.tool_policy = tool_policy
-
-    def run(self, skill, request: SkillRequest) -> dict:
-        """Run newsletter compilation via OpenAI."""
-        api_key = os.getenv("OPENAI_API_KEY")
-        model = os.getenv("OPENAI_NEWSLETTER_MODEL", "gpt-4o-mini")
-
-        if not api_key:
-            raise SkillRuntimeError("OPENAI_API_KEY is not set in the environment")
-
-        try:
-            from openai import OpenAI
-        except ImportError as exc:
-            raise SkillRuntimeError(
-                "The `openai` package is required. Install it with "
-                "`pip install openai`."
-            ) from exc
-
-        client = OpenAI(api_key=api_key)
-
-        response_kwargs = {
-            "model": model,
-            "instructions": skill.instructions,
-            "input": request.prompt,
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "newsletter_compiler_result",
-                    "schema": load_schema(request.output_schema_path),
-                    "strict": True,
-                }
-            },
-        }
-
-        response = client.responses.create(**response_kwargs)
-        payload = self._extract_structured_payload(response, request)
-        return payload
-
-    def _extract_structured_payload(self, response, request: SkillRequest) -> dict:
-        """Extract and validate the structured response payload."""
-        raw_text = (getattr(response, "output_text", "") or "").strip()
-        if not raw_text:
-            raise SkillRuntimeError("OpenAI backend returned an empty response.")
-
-        try:
-            payload = json.loads(raw_text)
-        except json.JSONDecodeError as exc:
-            raise SkillRuntimeError("OpenAI backend did not return valid structured JSON.") from exc
-
-        schema = load_schema(request.output_schema_path)
-        return normalize_payload(payload, schema=schema)
-
-
 def compile_newsletter(
     research_entries: list[dict],
     skill_path: Optional[str | Path] = None,
@@ -108,7 +79,7 @@ def compile_newsletter(
     Compile a weekly newsletter from research entries using OpenAI.
 
     Args:
-        research_entries: List of research entry dicts with keys: id, datetime, topic, content
+        research_entries: List of research entry dicts with keys: datetime, topic, content
         skill_path: Optional path to the newsletter-compiler skill file
 
     Returns:
@@ -123,7 +94,7 @@ def compile_newsletter(
         - newsletter_html (optional)
 
     Raises:
-        SkillRuntimeError: If OpenAI is not configured or compilation fails
+        NewsletterCompilerError: If OpenAI is not configured or compilation fails
         ValueError: If research_entries is empty or invalid
     """
     if not research_entries:
@@ -139,22 +110,41 @@ def compile_newsletter(
         if "topic" not in entry or "content" not in entry:
             raise ValueError("Each entry must have 'topic' and 'content' fields")
 
-    skill_path = skill_path or DEFAULT_SKILL_PATH
-    skill = load_skill(skill_path, name="topic-newsletter-compiler")
-    
-    backend = OpenAINewsletterBackend(ToolPolicy(enable_web_search=False))
+    instructions = _load_text_file(skill_path or DEFAULT_SKILL_PATH, "Skill")
+    schema = _load_schema(DEFAULT_SCHEMA_PATH)
     prompt = _build_newsletter_prompt(research_entries)
-    
-    result = backend.run(
-        skill,
-        SkillRequest(
-            topic="weekly-newsletter",
-            prompt=prompt,
-            output_schema_path=DEFAULT_SCHEMA_PATH,
-            return_response=True,
-        ),
+
+    try:
+        llm = get_llm_config("newsletter_compile", "gpt-4o-mini")
+    except RuntimeError as exc:
+        raise NewsletterCompilerError(str(exc)) from exc
+
+    client = llm.client
+    model = llm.model
+    response = client.responses.create(
+        model=model,
+        instructions=instructions,
+        input=prompt,
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "newsletter_compiler_result",
+                "schema": schema,
+                "strict": True,
+            }
+        },
     )
-    
+
+    raw_text = (getattr(response, "output_text", "") or "").strip()
+    if not raw_text:
+        raise NewsletterCompilerError("OpenAI backend returned an empty response.")
+
+    try:
+        result = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise NewsletterCompilerError("OpenAI backend did not return valid structured JSON.") from exc
+
+    result = _validate_newsletter_payload(result, schema)
     logger.info("Successfully compiled newsletter")
     return result
 

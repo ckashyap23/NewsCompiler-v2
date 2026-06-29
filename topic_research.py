@@ -1,11 +1,12 @@
 from pathlib import Path
-import os
 import sys
 import time
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
-from openai import APIConnectionError, APIStatusError, OpenAI
+from openai import APIConnectionError, APIStatusError
+
+from llm_provider import get_llm_config
 
 
 load_dotenv()
@@ -39,15 +40,14 @@ def run_topic_research(
     if not topic or not str(topic).strip():
         raise ValueError("topic is required")
 
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY is not set in the environment")
-
     skill_file = Path(skill_path)
     if not skill_file.exists():
         raise FileNotFoundError(f"Skill file not found: {skill_file}")
 
     skill_instructions = skill_file.read_text(encoding="utf-8")
-    client = OpenAI()
+    llm = get_llm_config("topic_research", model)
+    client = llm.client
+    model = llm.model
     started_at = time.monotonic()
     today_utc = datetime.now(timezone.utc).date().isoformat()
 

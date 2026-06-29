@@ -1,10 +1,7 @@
 """
 LinkedIn Post Connector
 
-Posts messages and newsletters to LinkedIn using OAuth2 API.
-
-Requires authentication via linkedin_auth.py first:
-    python linkedin_auth.py authenticate
+Posts messages and newsletters to LinkedIn using a LinkedIn access token.
 
 Usage:
     from linkedin_connector import post_to_linkedin
@@ -18,14 +15,20 @@ import requests
 from typing import Optional
 from dotenv import load_dotenv
 
-from linkedin_auth import get_valid_access_token
-
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 LINKEDIN_API_BASE = "https://api.linkedin.com/rest"
 LINKEDIN_API_VERSION = (os.getenv("LINKEDIN_API_VERSION") or "202506").strip()
+
+
+def get_valid_access_token() -> str:
+    """Get the LinkedIn access token from the environment."""
+    access_token = (os.getenv("LINKEDIN_ACCESS_TOKEN") or "").strip()
+    if not access_token:
+        raise ValueError("LINKEDIN_ACCESS_TOKEN is not set in the environment")
+    return access_token
 
 
 def _build_headers(access_token: str, include_version: bool = True) -> dict:
@@ -170,5 +173,4 @@ if __name__ == "__main__":
             
     except ValueError as e:
         print(f"✗ Authentication required: {e}")
-        print("\nTo authenticate, run:")
-        print("  python linkedin_auth.py authenticate")
+        print("\nSet LINKEDIN_ACCESS_TOKEN and LINKEDIN_AUTHOR_URN before posting.")

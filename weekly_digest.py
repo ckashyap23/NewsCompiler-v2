@@ -9,8 +9,7 @@ Usage:
     python weekly_digest.py --days 14          # Use last 14 days instead
     python weekly_digest.py --no-post          # Compile but don't post to LinkedIn
 
-Requires authentication via linkedin_auth.py first:
-    python linkedin_auth.py authenticate
+Requires LINKEDIN_ACCESS_TOKEN and LINKEDIN_AUTHOR_URN for LinkedIn posting.
 """
 import argparse
 import logging
@@ -23,6 +22,7 @@ from database import get_recent_entries_by_calendar_days
 from linkedin_connector import post_to_linkedin
 from newsletter_compiler import compile_newsletter
 from send_email import send_email
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -103,16 +103,15 @@ def generate_weekly_digest(
         Exception: If OpenAI configuration is missing or compilation fails.
     """
     logger.info(f"Fetching research entries from last {days} calendar day(s)...")
-    
+
     entries = get_recent_entries_by_calendar_days(days=days)
-    
+
     if not entries:
         logger.warning(f"No research entries found in the last {days} days.")
         return None
-    
+
     logger.info(f"Found {len(entries)} entries. Compiling newsletter with OpenAI...")
-    
-    # Convert database objects to dicts for the skill
+
     entries_data = []
     for entry in entries:
         entries_data.append({
@@ -120,8 +119,7 @@ def generate_weekly_digest(
             "topic": entry.topic,
             "content": entry.content,
         })
-    
-    # Use OpenAI to compile newsletter
+
     try:
         newsletter = compile_newsletter(entries_data)
     except Exception as e:
@@ -134,7 +132,7 @@ def generate_weekly_digest(
         else:
             logger.error(f"Failed to compile newsletter: {e}", exc_info=True)
             raise
-    
+
     logger.info("=" * 60)
     logger.info("WEEKLY NEWSLETTER")
     logger.info("=" * 60)
@@ -143,13 +141,11 @@ def generate_weekly_digest(
     logger.info("=" * 60)
     logger.info(newsletter.get("newsletter_markdown", "No content"))
     logger.info("=" * 60)
-    
-    should_post = not dry_run and not no_post
-    
+
     if dry_run:
         logger.info("DRY RUN: Not posting to LinkedIn.")
         return newsletter
-    
+
     if no_post:
         logger.info("NO_POST: Newsletter compiled but not posted to LinkedIn.")
     else:
@@ -160,12 +156,12 @@ def generate_weekly_digest(
             content=newsletter_content,
             title=newsletter.get("newsletter_title", "Weekly News Digest")
         )
-        
+
         if success:
             logger.info("Successfully posted to LinkedIn.")
         else:
             logger.error("Failed to post to LinkedIn.")
-    
+
     effective_recipients = recipients or [r for r in os.getenv("RECIPIENT_EMAILS", "").split() if r]
     if effective_recipients and not no_email:
         logger.info("Sending weekly digest email to %d recipient(s)...", len(effective_recipients))
@@ -177,7 +173,7 @@ def generate_weekly_digest(
         logger.info("Weekly digest email sent.")
     elif no_email:
         logger.info("NO_EMAIL: Newsletter compiled but not emailed.")
-    
+
     return newsletter
 
 
