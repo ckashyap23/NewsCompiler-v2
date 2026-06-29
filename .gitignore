@@ -25,6 +25,7 @@ build/
 *.sqlite3
 *.log
 *.err.log
+linkedin_auth.py
 
 # IDE
 .idea/

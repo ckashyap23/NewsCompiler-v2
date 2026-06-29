@@ -10,7 +10,8 @@
     "top_highlights",
     "implications",
     "topics_covered",
-    "newsletter_markdown"
+    "newsletter_markdown",
+    "newsletter_html"
   ],
   "properties": {
     "newsletter_title": {

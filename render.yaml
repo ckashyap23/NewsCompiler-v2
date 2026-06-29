@@ -6,7 +6,14 @@
 #    DATABASE_URL          postgresql://... (Supabase connection URL)
 #
 #  DAILY RESEARCH (cnews-daily):
-#    OPENAI_API_KEY        OpenAI API key
+#    LLM_PROVIDER          openai or azure_openai
+#    OPENAI_API_KEY        Required when LLM_PROVIDER=openai
+#    OPENAI_TOPIC_MODEL    Optional; defaults to gpt-5
+#    AZURE_OPENAI_ENDPOINT Required when LLM_PROVIDER=azure_openai
+#    AZURE_OPENAI_API_KEY  Required when LLM_PROVIDER=azure_openai
+#    AZURE_OPENAI_API_VERSION Required when LLM_PROVIDER=azure_openai
+#    AZURE_OPENAI_DEPLOYMENT Required fallback Azure deployment
+#    AZURE_OPENAI_TOPIC_DEPLOYMENT Optional topic-specific Azure deployment
 #    GMAIL_EMAIL           Gmail sender address
 #    GMAIL_APP_PASSWORD    Gmail App Password (no spaces)
 #    RECIPIENT_EMAILS      Space-separated list: "a@x.com b@y.com"
@@ -14,14 +21,19 @@
 #
 #  WEEKLY DIGEST (cnews-weekly-digest):
 #    DATABASE_URL          postgresql://... (same Supabase connection URL)
-#    OPENAI_API_KEY        Same key can be used by both daily and weekly jobs
+#    LLM_PROVIDER          openai or azure_openai
+#    OPENAI_API_KEY        Required when LLM_PROVIDER=openai
 #    OPENAI_NEWSLETTER_MODEL Optional; defaults to gpt-4o-mini
+#    AZURE_OPENAI_ENDPOINT Required when LLM_PROVIDER=azure_openai
+#    AZURE_OPENAI_API_KEY  Required when LLM_PROVIDER=azure_openai
+#    AZURE_OPENAI_API_VERSION Required when LLM_PROVIDER=azure_openai
+#    AZURE_OPENAI_DEPLOYMENT Required fallback Azure deployment
+#    AZURE_OPENAI_NEWSLETTER_DEPLOYMENT Optional newsletter-specific Azure deployment
 #    WEEKLY_DIGEST_DAYS    Number of calendar days to include, e.g. 7
 #    RECIPIENT_EMAILS      Optional weekly digest email recipients
 #    LINKEDIN_AUTHOR_URN   urn:li:person:<member_id>
 #    LINKEDIN_ACCESS_TOKEN Access token from LinkedIn OAuth flow
 #    LINKEDIN_API_VERSION  Optional; defaults in code
-
 services:
   - type: cron
     name: cnews-daily

@@ -8,6 +8,7 @@ Usage:
     python orchestrator.py -s "Custom subject" "topic" recipient@example.com
 """
 import argparse
+import os
 import re
 import sys
 from datetime import datetime
@@ -17,8 +18,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from database import store_research_result
-from models import init_db
+from database import init_db, store_research_result
 from send_email import send_email
 from topic_research import run_topic_research
 
@@ -111,7 +111,7 @@ def main() -> int:
     )
     parser.add_argument(
         "inputs",
-        nargs="+",
+        nargs="*",
         help='Recipients, or "topic recipients..." when using the legacy positional form',
     )
     parser.add_argument(
@@ -144,7 +144,14 @@ def main() -> int:
             print("Database initialised.")
             return 0
 
-        topic, recipients = parse_cli_inputs(args.inputs, explicit_topic=args.topic)
+        inputs = args.inputs or [
+            value for value in os.getenv("RECIPIENT_EMAILS", "").split() if value
+        ]
+        configured_topic = args.topic
+        if configured_topic is None:
+            configured_topic = os.getenv("RESEARCH_TOPIC") or None
+
+        topic, recipients = parse_cli_inputs(inputs, explicit_topic=configured_topic)
         resolved_topic = resolve_topic(topic)
         run(topic, recipients, subject=args.subject, store_to_db=not args.no_db)
         print(f"Using topic: {resolved_topic}")
