@@ -48,7 +48,15 @@ def _validate_newsletter_payload(payload: dict, schema: dict) -> dict:
         if field not in payload:
             raise NewsletterCompilerError(f"Newsletter result is missing `{field}`.")
 
-    for field in ("newsletter_title", "opening_hook", "implications", "newsletter_markdown"):
+    for field in (
+        "newsletter_title",
+        "opening_hook",
+        "thesis",
+        "my_read",
+        "newsletter_markdown",
+        "newsletter_html",
+        "linkedin_post",
+    ):
         if not isinstance(payload.get(field), str) or not payload[field].strip():
             raise NewsletterCompilerError(f"`{field}` must be a non-empty string.")
 
@@ -88,10 +96,12 @@ def compile_newsletter(
         - opening_hook
         - key_trends
         - top_highlights
-        - implications
+        - thesis
+        - my_read
         - topics_covered
         - newsletter_markdown
-        - newsletter_html (optional)
+        - newsletter_html
+        - linkedin_post
 
     Raises:
         NewsletterCompilerError: If OpenAI is not configured or compilation fails

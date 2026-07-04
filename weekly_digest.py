@@ -69,11 +69,14 @@ def _build_fallback_newsletter(entries_data: list[dict]) -> dict:
     return {
         "newsletter_title": title,
         "opening_hook": hook,
+        "thesis": implications,
         "key_trends": top_topics or ["No dominant trend detected"],
         "top_highlights": highlights or ["No highlights available"],
         "implications": implications,
+        "my_read": implications,
         "topics_covered": list(topic_counts.keys()),
         "newsletter_markdown": "\n".join(markdown_lines),
+        "linkedin_post": "\n".join(markdown_lines),
     }
 
 
@@ -151,10 +154,12 @@ def generate_weekly_digest(
     else:
         # Post to LinkedIn
         logger.info("Posting to LinkedIn...")
-        newsletter_content = newsletter.get("newsletter_markdown", "")
+        newsletter_content = (
+            newsletter.get("linkedin_post")
+            or newsletter.get("newsletter_markdown", "")
+        )
         success = post_to_linkedin(
             content=newsletter_content,
-            title=newsletter.get("newsletter_title", "Weekly News Digest")
         )
 
         if success:
