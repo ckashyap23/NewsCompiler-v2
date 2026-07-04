@@ -6,12 +6,14 @@
   "required": [
     "newsletter_title",
     "opening_hook",
+    "thesis",
     "key_trends",
     "top_highlights",
-    "implications",
+    "my_read",
     "topics_covered",
     "newsletter_markdown",
-    "newsletter_html"
+    "newsletter_html",
+    "linkedin_post"
   ],
   "properties": {
     "newsletter_title": {
@@ -19,6 +21,10 @@
       "minLength": 1
     },
     "opening_hook": {
+      "type": "string",
+      "minLength": 1
+    },
+    "thesis": {
       "type": "string",
       "minLength": 1
     },
@@ -80,7 +86,7 @@
         }
       }
     },
-    "implications": {
+    "my_read": {
       "type": "string",
       "minLength": 1
     },
@@ -95,10 +101,12 @@
       "minLength": 1
     },
     "newsletter_html": {
-      "type": [
-        "string",
-        "null"
-      ]
+      "type": "string",
+      "minLength": 1
+    },
+    "linkedin_post": {
+      "type": "string",
+      "minLength": 1
     }
   }
 }
