@@ -2,8 +2,8 @@
 Send email via Gmail SMTP to a list of recipients.
 
 Usage:
-    python send_email.py "Your message text" recipient1@example.com recipient2@example.com
-    python send_email.py -s "Subject" "Your message text" recipient@example.com
+    python -m shared.send_email "Your message text" recipient1@example.com recipient2@example.com
+    python -m shared.send_email -s "Subject" "Your message text" recipient@example.com
 
 Sender email is read from GMAIL_EMAIL in .env.
 Password (Gmail App Password) is read from GMAIL_APP_PASSWORD in .env.
@@ -14,17 +14,16 @@ import socket
 import sys
 import argparse
 import smtplib
-from pathlib import Path
 from email.message import EmailMessage
 
 from dotenv import load_dotenv
+from shared.paths import ENV_PATH
 
 GMAIL_SMTP_HOST = "smtp.gmail.com"
 GMAIL_SMTP_PORT = 587
 GMAIL_SMTP_SSL_PORT = 465
 DEFAULT_TIMEOUT_SECONDS = 20
 
-ENV_PATH = Path(__file__).resolve().with_name(".env")
 load_dotenv(dotenv_path=ENV_PATH)
 
 
@@ -53,7 +52,9 @@ def _send_via_starttls(email: str, password: str, recipients: list[str], msg: Em
         smtp.starttls(context=context)
         smtp.ehlo()
         smtp.login(email, password)
-        smtp.send_message(msg, from_addr=email, to_addrs=recipients)
+        refused = smtp.send_message(msg, from_addr=email, to_addrs=recipients)
+        if refused:
+            raise smtplib.SMTPRecipientsRefused(refused)
 
 
 def _send_via_ssl(email: str, password: str, recipients: list[str], msg: EmailMessage) -> None:
@@ -65,7 +66,9 @@ def _send_via_ssl(email: str, password: str, recipients: list[str], msg: EmailMe
         context=context,
     ) as smtp:
         smtp.login(email, password)
-        smtp.send_message(msg, from_addr=email, to_addrs=recipients)
+        refused = smtp.send_message(msg, from_addr=email, to_addrs=recipients)
+        if refused:
+            raise smtplib.SMTPRecipientsRefused(refused)
 
 
 def _raise_helpful_smtp_error(exc: Exception) -> None:
@@ -117,6 +120,9 @@ def send_email(
 
     try:
         _send_via_starttls(email, password, recipients, msg)
+    except smtplib.SMTPRecipientsRefused as exc:
+        # Some recipients may already have received it. Do not resend to everyone.
+        _raise_helpful_smtp_error(exc)
     except Exception as starttls_exc:
         try:
             _send_via_ssl(email, password, recipients, msg)

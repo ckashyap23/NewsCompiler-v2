@@ -1,13 +1,14 @@
 """
-Orchestrator: Research a topic and email the summary to recipients.
+Orchestrator: Research a topic, archive it, and deliver it to email and WhatsApp.
 
 Usage:
-    python orchestrator.py recipient1@example.com recipient2@example.com
-    python orchestrator.py "topic" recipient1@example.com recipient2@example.com
-    python orchestrator.py --topic "topic" recipient1@example.com recipient2@example.com
-    python orchestrator.py -s "Custom subject" "topic" recipient@example.com
+    python -m daily.orchestrator
+    python -m daily.orchestrator recipient1@example.com recipient2@example.com
+    python -m daily.orchestrator "topic" recipient@example.com
+    python -m daily.orchestrator --topic "topic" recipient@example.com
 """
 import argparse
+import logging
 import os
 import re
 import sys
@@ -16,11 +17,14 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-load_dotenv()
+from shared.paths import ENV_PATH
 
-from database import init_db, store_research_result
-from send_email import send_email
-from topic_research import run_topic_research
+load_dotenv(dotenv_path=ENV_PATH)
+
+from shared.database import init_db, store_research_result
+from shared.send_email import send_email
+from daily.topic_research import run_topic_research
+from daily.whatsapp_connector import get_phone_recipients, get_relay_config, send_whatsapp
 
 DEFAULT_TOPICS_BY_DAY = {
     "Monday": "new AI tools, developer tools, SaaS products, open source releases, product launches in tech and AI in the last 7 days",
@@ -33,6 +37,7 @@ DEFAULT_TOPICS_BY_DAY = {
 }
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+logger = logging.getLogger(__name__)
 
 
 def get_topic_for_today() -> str:
@@ -70,15 +75,63 @@ def run(
     Returns:
         The research summary text that was emailed.
     """
+    return run_daily(topic, recipients, subject=subject, store_to_db=store_to_db)["content"]
+
+
+class DailyDeliveryError(RuntimeError):
+    """One or more channels failed; other channels may already have delivered."""
+
+    def __init__(self, result: dict):
+        super().__init__("Daily news generated, but one or more deliveries failed")
+        self.result = result
+
+
+def run_daily(
+    topic: Optional[str] = None,
+    recipients: Optional[list[str]] = None,
+    subject: Optional[str] = None,
+    store_to_db: bool = True,
+    email_enabled: bool = True,
+    whatsapp_enabled: bool = True,
+) -> dict:
+    """Generate once, archive the content, then attempt each configured channel."""
+    emails = (os.getenv("RECIPIENT_EMAILS") or "").split() if recipients is None else recipients
+    emails = emails if email_enabled else []
+    phones = get_phone_recipients() if whatsapp_enabled else []
+    if not emails and not phones:
+        raise ValueError("Configure RECIPIENT_EMAILS and/or RECEIPENT_PHONE_NUMBERS for an enabled channel")
+    if phones:
+        get_relay_config()  # Fail before generating content if relay settings are missing.
+
     resolved_topic = resolve_topic(topic)
     summary = run_topic_research(resolved_topic)
+    if not summary or not summary.strip():
+        raise RuntimeError("Research returned empty content")
     email_subject = subject or f"Topic Research: {resolved_topic}"
-    send_email(summary, recipients, subject=email_subject)
-
-    if store_to_db:
-        store_research_result(email_subject, summary)
-
-    return summary
+    stored_at = store_research_result(email_subject, summary) if store_to_db else None
+    result = {
+        "topic": resolved_topic,
+        "subject": email_subject,
+        "content": summary,
+        "stored_at": stored_at.isoformat() if stored_at else None,
+        "deliveries": {"email": "skipped", "whatsapp": "skipped"},
+    }
+    for channel, targets in (("email", emails), ("whatsapp", phones)):
+        if not targets:
+            continue
+        try:
+            if channel == "email":
+                send_email(summary, targets, subject=email_subject)
+            else:
+                send_whatsapp(summary, targets)
+            # A relay 2xx confirms acceptance, not delivery to recipients' devices.
+            result["deliveries"][channel] = "sent" if channel == "email" else "accepted"
+        except Exception:
+            logger.exception("Daily %s delivery failed or is unconfirmed", channel)
+            result["deliveries"][channel] = "failed_or_unconfirmed"
+    if "failed_or_unconfirmed" in result["deliveries"].values():
+        raise DailyDeliveryError(result)
+    return result
 
 
 def parse_cli_inputs(
@@ -107,7 +160,7 @@ def parse_cli_inputs(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Research a topic and email the summary to recipients"
+        description="Research a topic and deliver it to configured email and WhatsApp recipients"
     )
     parser.add_argument(
         "inputs",
@@ -151,12 +204,18 @@ def main() -> int:
         if configured_topic is None:
             configured_topic = os.getenv("RESEARCH_TOPIC") or None
 
-        topic, recipients = parse_cli_inputs(inputs, explicit_topic=configured_topic)
+        if not inputs and get_phone_recipients():
+            topic, recipients = configured_topic, []
+        else:
+            topic, recipients = parse_cli_inputs(inputs, explicit_topic=configured_topic)
         resolved_topic = resolve_topic(topic)
         run(topic, recipients, subject=args.subject, store_to_db=not args.no_db)
         print(f"Using topic: {resolved_topic}")
-        print("Research completed and email sent successfully.")
+        print("Research completed and configured deliveries accepted successfully.")
         return 0
+    except DailyDeliveryError as exc:
+        print(f"Error: {exc}. Delivery results: {exc.result['deliveries']}", file=sys.stderr)
+        return 1
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

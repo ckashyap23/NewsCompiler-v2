@@ -4,10 +4,10 @@ Weekly digest generator: collects recent research data and creates a LinkedIn po
 Uses the "topic-newsletter-compiler" skill with OpenAI to analyze data.
 
 Usage:
-    python weekly_digest.py                    # Compile and post digest
-    python weekly_digest.py --dry-run          # Preview without posting
-    python weekly_digest.py --days 14          # Use last 14 days instead
-    python weekly_digest.py --no-post          # Compile but don't post to LinkedIn
+    python -m weekly.digest --no-email          # Compile and post digest
+    python -m weekly.digest --dry-run           # Preview without posting
+    python -m weekly.digest --days 14           # Use last 14 days instead
+    python -m weekly.digest --no-post           # Compile but don't post to LinkedIn
 
 Requires LINKEDIN_ACCESS_TOKEN and LINKEDIN_AUTHOR_URN for LinkedIn posting.
 """
@@ -18,10 +18,10 @@ from collections import Counter
 from datetime import datetime
 from typing import Optional
 
-from database import get_recent_entries_by_calendar_days
-from linkedin_connector import post_to_linkedin
-from newsletter_compiler import compile_newsletter
-from send_email import send_email
+from shared.database import get_recent_entries_by_calendar_days
+from weekly.linkedin_connector import post_to_linkedin
+from weekly.newsletter_compiler import compile_newsletter
+from shared.send_email import send_email
 
 
 logging.basicConfig(
@@ -107,6 +107,9 @@ def generate_weekly_digest(
     """
     logger.info(f"Fetching research entries from last {days} calendar day(s)...")
 
+    if days <= 0:
+        raise ValueError("days must be greater than zero")
+
     entries = get_recent_entries_by_calendar_days(days=days)
 
     if not entries:
@@ -165,7 +168,7 @@ def generate_weekly_digest(
         if success:
             logger.info("Successfully posted to LinkedIn.")
         else:
-            logger.error("Failed to post to LinkedIn.")
+            raise RuntimeError("LinkedIn publishing failed; delivery may be unconfirmed. Check server logs before retrying.")
 
     effective_recipients = recipients or [r for r in os.getenv("RECIPIENT_EMAILS", "").split() if r]
     if effective_recipients and not no_email:

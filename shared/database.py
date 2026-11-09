@@ -1,5 +1,5 @@
 """
-Database operations for news compiler.
+Database operations shared by the daily and weekly workflows.
 """
 import os
 from datetime import datetime, timedelta, timezone

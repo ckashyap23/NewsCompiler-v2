@@ -4,7 +4,7 @@ LinkedIn Post Connector
 Posts messages and newsletters to LinkedIn using a LinkedIn access token.
 
 Usage:
-    from linkedin_connector import post_to_linkedin
+    from weekly.linkedin_connector import post_to_linkedin
     
     post_to_linkedin("Your message here")
     post_to_linkedin("Message", title="📰 Newsletter")
@@ -14,13 +14,14 @@ import os
 import requests
 from typing import Optional
 from dotenv import load_dotenv
+from shared.paths import ENV_PATH
 
-load_dotenv()
+load_dotenv(dotenv_path=ENV_PATH)
 
 logger = logging.getLogger(__name__)
 
 LINKEDIN_API_BASE = "https://api.linkedin.com/rest"
-LINKEDIN_API_VERSION = (os.getenv("LINKEDIN_API_VERSION") or "202506").strip()
+LINKEDIN_API_VERSION = (os.getenv("LINKEDIN_API_VERSION") or "202610").strip()
 
 
 def get_valid_access_token() -> str:
@@ -31,15 +32,14 @@ def get_valid_access_token() -> str:
     return access_token
 
 
-def _build_headers(access_token: str, include_version: bool = True) -> dict:
-    """Build LinkedIn API headers with optional version pinning."""
+def _build_headers(access_token: str) -> dict:
+    """Build the required LinkedIn API headers."""
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
-        "X-Requested-With": "XMLHttpRequest",
+        "X-Restli-Protocol-Version": "2.0.0",
     }
-    if include_version:
-        headers["LinkedIn-Version"] = LINKEDIN_API_VERSION
+    headers["LinkedIn-Version"] = LINKEDIN_API_VERSION
     return headers
 
 
@@ -92,9 +92,7 @@ def post_to_linkedin(
                 "Could not determine LinkedIn author URN.\n"
                 "  1. Go to https://www.linkedin.com/developers/tools/oauth/token-inspector\n"
                 "  2. Paste your access token to find your member ID\n"
-                "  3. Set in .env:  LINKEDIN_AUTHOR_URN=urn:li:person:YOUR_MEMBER_ID\n"
-                "  Your token: %s...",
-                (get_valid_access_token() or "")[:30],
+                "  3. Set in .env:  LINKEDIN_AUTHOR_URN=urn:li:person:YOUR_MEMBER_ID",
             )
             return False
         
@@ -102,7 +100,7 @@ def post_to_linkedin(
         if title:
             post_text = f"{title}\n\n{content}"
         
-        headers = _build_headers(access_token, include_version=True)
+        headers = _build_headers(access_token)
         
         payload = {
             "author": author_urn,
@@ -120,18 +118,8 @@ def post_to_linkedin(
         url = f"{LINKEDIN_API_BASE}/posts"
         response = requests.post(url, json=payload, headers=headers, timeout=10)
 
-        # If requested API version is inactive, retry once without explicit version.
-        if response.status_code == 426 and "NONEXISTENT_VERSION" in response.text:
-            logger.warning(
-                "LinkedIn API version '%s' is inactive. Retrying without LinkedIn-Version header.",
-                LINKEDIN_API_VERSION,
-            )
-            response = requests.post(
-                url,
-                json=payload,
-                headers=_build_headers(access_token, include_version=False),
-                timeout=10,
-            )
+        if response.status_code == 426:
+            logger.error("Set LINKEDIN_API_VERSION to a currently supported LinkedIn API version.")
         
         if response.status_code in (201, 200, 202):
             logger.info("✓ Successfully posted to LinkedIn")
@@ -162,7 +150,6 @@ if __name__ == "__main__":
     try:
         token = get_valid_access_token()
         print(f"✓ Valid access token found")
-        print(f"  Token (first 20 chars): {token[:20]}...")
         
         success = post_to_linkedin("Test post from cnews-compiler. #testing")
         

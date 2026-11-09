@@ -6,14 +6,13 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from openai import APIConnectionError, APIStatusError
 
-from llm_provider import get_llm_config
+from shared.llm_provider import get_llm_config
+from shared.paths import ENV_PATH, REPO_ROOT
 
 
-load_dotenv()
+load_dotenv(dotenv_path=ENV_PATH)
 
-BASE_DIR = Path(__file__).resolve().parent
-
-DEFAULT_SKILL_PATH = BASE_DIR / "skills" / "topic-research-summarizer" / "SKILL.md"
+DEFAULT_SKILL_PATH = REPO_ROOT / "skills" / "topic-research-summarizer" / "SKILL.md"
 
 
 def run_topic_research(
@@ -103,7 +102,7 @@ def run_topic_research(
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python topic_research.py <topic>")
+        print("Usage: python -m daily.topic_research <topic>")
         sys.exit(1)
 
     query = " ".join(sys.argv[1:])

@@ -6,13 +6,13 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from llm_provider import get_llm_config
+from shared.llm_provider import get_llm_config
+from shared.paths import ENV_PATH, REPO_ROOT
 
-load_dotenv()
+load_dotenv(dotenv_path=ENV_PATH)
 
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parent
 DEFAULT_SKILL_PATH = REPO_ROOT / "skills" / "topic-newsletter-compiler" / "SKILL.md"
 DEFAULT_SCHEMA_PATH = REPO_ROOT / "schemas" / "newsletter_compiler_result.json"
 

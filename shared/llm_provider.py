@@ -1,4 +1,4 @@
-"""LLM provider selection for OpenAI and Azure OpenAI."""
+"""Shared LLM provider selection for OpenAI and Azure OpenAI."""
 
 import os
 from dataclasses import dataclass
