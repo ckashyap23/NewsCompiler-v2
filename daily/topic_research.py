@@ -57,7 +57,18 @@ def run_topic_research(
     try:
         response = client.responses.create(
             model=model,
-            instructions=skill_instructions,
+            instructions=(
+                skill_instructions
+                + "\n\nDaily newsletter output requirements:\n"
+                "Return only the finished news content, including relevant source links "
+                "and factual caveats. This content is sent directly to subscribers. "
+                "Do not include assistant introductions, conversational sign-offs, "
+                "follow-up questions, offers of further help, or suggestions to "
+                "reformat, shorten, expand, or track the content in a future exchange. "
+                "Omit phrases such as 'If you want', 'Let me know', 'say the word', "
+                "and 'I can format this for your newsletter'. "
+                "End after the final substantive news item, caveat, or source reference."
+            ),
             tools=[{"type": "web_search"}],
             include=["web_search_call.action.sources"],
             input=(
