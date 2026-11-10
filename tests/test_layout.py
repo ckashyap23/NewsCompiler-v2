@@ -1,5 +1,6 @@
 """Check package entry points and resource locations after restructuring."""
 import json
+import io
 import subprocess
 import sys
 import unittest
@@ -29,9 +30,23 @@ class PackageLayoutTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("usage:", result.stdout.lower())
 
-    @patch("daily.orchestrator.run")
-    def test_daily_cli_reports_partial_failure_as_nonzero(self, run):
-        run.side_effect = orchestrator.DailyDeliveryError({"deliveries": {"email": "sent", "whatsapp": "failed_or_unconfirmed"}})
+    @patch("daily.orchestrator.run_daily")
+    def test_daily_cli_reports_delivery_warnings_and_exits_successfully(self, run):
+        for deliveries in (
+            {"email": "sent", "whatsapp": "failed_or_unconfirmed"},
+            {"email": "failed_or_unconfirmed", "whatsapp": "accepted"},
+            {"email": "failed_or_unconfirmed", "whatsapp": "failed_or_unconfirmed"},
+        ):
+            with self.subTest(deliveries=deliveries):
+                run.return_value = {"deliveries": deliveries}
+                output = io.StringIO()
+                with patch.object(sys, "argv", ["daily.orchestrator", "--topic", "AI", "reader@example.com"]), patch("sys.stdout", output):
+                    self.assertEqual(orchestrator.main(), 0)
+                self.assertIn("delivery warnings", output.getvalue())
+                self.assertIn(str(deliveries), output.getvalue())
+
+    @patch("daily.orchestrator.run_daily", side_effect=RuntimeError("Research failed"))
+    def test_daily_cli_generation_failure_is_nonzero(self, run):
         with patch.object(sys, "argv", ["daily.orchestrator", "--topic", "AI", "reader@example.com"]):
             self.assertEqual(orchestrator.main(), 1)
 

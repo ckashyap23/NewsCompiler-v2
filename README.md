@@ -18,7 +18,7 @@ weekly/
 shared/
   database.py              PostgreSQL/Supabase storage
   llm_provider.py          OpenAI and Azure OpenAI provider selection
-  send_email.py            Gmail SMTP delivery
+  send_email.py            Gmail SMTP or Resend HTTPS delivery
   paths.py                 Repository resource and .env paths
 api.py                     Optional FastAPI endpoints
 deploy/railway-api.json    Optional HTTP service configuration
@@ -85,10 +85,11 @@ OPENAI_API_KEY=your-key
 OPENAI_TOPIC_MODEL=gpt-5
 RESEARCH_TOPIC=
 RECIPIENT_EMAILS=reader1@example.com reader2@example.com
-GMAIL_EMAIL=your-sender@gmail.com
-GMAIL_APP_PASSWORD=your-gmail-app-password
-API_PATH=https://whatsappserver-production-2b41.up.railway.app
-API_POST_PATH=/api/messages/send
+EMAIL_PROVIDER=resend
+RESEND_API_KEY=your-resend-api-key
+EMAIL_FROM=News <news@your-verified-domain.com>
+API_PATH=https://your-relay-domain.example
+API_POST_PATH=/your-actual-post-route
 BEARER_TOKEN=your-whatsapp-relay-token
 RECEIPENT_PHONE_NUMBERS=918340412106 919876543210
 PYTHONUNBUFFERED=1
@@ -96,7 +97,9 @@ PYTHONUNBUFFERED=1
 
 Blank `RESEARCH_TOPIC` enables the UTC weekday topic rotation. Recipients are whitespace-separated. Keep the exact spelling `RECEIPENT_PHONE_NUMBERS`. A channel is skipped when its recipient variable is empty; at least one channel needs recipients.
 
-Gmail delivery uses SMTP. **Railway requires Pro or above for SMTP**; Free, Trial, and Hobby block it. For WhatsApp-only operation, leave `RECIPIENT_EMAILS` empty. Supporting email on those plans would require a separate change to an HTTPS email provider. After upgrading a Railway plan for SMTP, redeploy the service. See [Railway outbound networking](https://docs.railway.com/networking/outbound-networking).
+The example uses [Resend's HTTPS email API](https://resend.com/docs/api-reference/emails/send-email), which works without SMTP access. Configure a Resend API key and an `EMAIL_FROM` sender on a verified domain; account testing restrictions may limit recipient addresses. A successful send confirms provider acceptance, not inbox delivery. HTTP sends are not automatically retried or switched to SMTP after failure.
+
+For Gmail instead, set `EMAIL_PROVIDER=gmail`, `GMAIL_EMAIL`, and `GMAIL_APP_PASSWORD`. Gmail remains the default when `EMAIL_PROVIDER` is unset. **Railway requires Pro or above for SMTP**; Free, Trial, and Hobby block it. After upgrading a Railway plan for SMTP, redeploy the service. See [Railway outbound networking](https://docs.railway.com/networking/outbound-networking). For WhatsApp-only operation, leave `RECIPIENT_EMAILS` empty.
 
 The relay receives `Authorization: Bearer <BEARER_TOKEN>` and this JSON at `API_PATH` + `API_POST_PATH`:
 
@@ -108,6 +111,8 @@ The relay receives `Authorization: Bearer <BEARER_TOKEN>` and this JSON at `API_
 ```
 
 A relay HTTP 2xx confirms relay acceptance, not delivery to a device. Requests use HTTPS, timeouts, and no automatic POST retries.
+
+A relay HTTP 404 means the configured URL returned “not found.” Check the running relay's route definitions or API docs, then set `API_PATH` to its HTTPS origin and `API_POST_PATH` to its actual POST route. Include any API version/prefix exactly once. Also verify the relay is deployed and its domain targets the correct service. This repository contains the relay client, not the relay server, so it cannot determine the correct route. The optional `/daily-news` endpoint below runs news generation; it is not a WhatsApp relay endpoint.
 
 ### 3. Create the weekly service
 
@@ -137,7 +142,8 @@ The LinkedIn token needs permission to post as the author (for a personal profil
 1. Trigger one daily execution when ready to send real messages. Check logs, the email/WhatsApp recipients, and a new row in `news_compiler_db`.
 2. Once daily data exists, trigger one weekly execution when ready for a real LinkedIn post. Check logs and the profile feed.
 3. Confirm each process finishes and exits. Railway skips a scheduled execution if the previous one is still running.
-4. Review failures before manually rerunning. A failed or timed-out delivery may have succeeded for some recipients. Each run generates new content; there is no persistent idempotency key or automatic channel-specific recovery. Restart policy `NEVER` avoids automatic restarts after partial delivery.
+4. Check the per-channel delivery results in the logs. Email and WhatsApp are attempted independently; failures in either or both channels log errors but the daily job exits successfully after generation and storage complete. Missing or invalid channel credentials are also treated as delivery failures. Research, database, and no-recipient configuration errors still fail the job.
+5. Review delivery errors before manually rerunning. A failed or timed-out delivery may have succeeded for some recipients. Each run generates new content; there is no persistent idempotency key or automatic channel-specific recovery. Restart policy `NEVER` avoids automatic restarts.
 
 For a weekly preview without publishing or email, run locally with the configured database:
 
@@ -207,6 +213,6 @@ python -m uvicorn api:app --reload --port 8000
 
 Both POST routes accept an empty body and require `Authorization: Bearer <BACKEND_API_TOKEN>`. The backend token is separate from the WhatsApp relay's `BEARER_TOKEN`. Cron services do not require `BACKEND_API_TOKEN`. API documentation is at `/docs`.
 
-HTTP requests run synchronously. A caller timeout does not cancel work already running. Daily HTTP 502 responses report per-channel partial results; `sent` means SMTP acceptance and `accepted` means relay acceptance. LinkedIn failure returns HTTP 502. With no stored entries, the weekly API returns `status: skipped`. The health check verifies process responsiveness, not external credentials.
+HTTP requests run synchronously. A caller timeout does not cancel work already running. Daily requests return HTTP 200 after successful research and storage, including when either or both deliveries fail. The response status is `completed_with_delivery_errors` when any channel fails, otherwise `completed`. The `deliveries` object reports each channel: `sent` means email provider acceptance, `accepted` means relay acceptance, `failed_or_unconfirmed` means sending failed or was not confirmed, and `skipped` means no recipients or a disabled channel. Daily research and database failures still return HTTP 502. LinkedIn failure returns HTTP 502. With no stored entries, the weekly API returns `status: skipped`. The health check verifies process responsiveness, not external credentials.
 
 The API does not schedule itself. Avoid scheduling an API call for a workflow already scheduled by its cron service, which would send duplicate editions.

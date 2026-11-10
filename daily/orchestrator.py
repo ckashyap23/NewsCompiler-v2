@@ -12,7 +12,7 @@ import logging
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -24,7 +24,7 @@ load_dotenv(dotenv_path=ENV_PATH)
 from shared.database import init_db, store_research_result
 from shared.send_email import send_email
 from daily.topic_research import run_topic_research
-from daily.whatsapp_connector import get_phone_recipients, get_relay_config, send_whatsapp
+from daily.whatsapp_connector import get_phone_recipients, send_whatsapp
 
 DEFAULT_TOPICS_BY_DAY = {
     "Monday": "new AI tools, developer tools, SaaS products, open source releases, product launches in tech and AI in the last 7 days",
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 def get_topic_for_today() -> str:
     """Return the default topic prompt for the current UTC weekday."""
-    day = datetime.utcnow().strftime("%A")
+    day = datetime.now(timezone.utc).strftime("%A")
     return DEFAULT_TOPICS_BY_DAY.get(day, DEFAULT_TOPICS_BY_DAY["Monday"])
 
 
@@ -65,7 +65,7 @@ def run(
     store_to_db: bool = True,
 ) -> str:
     """
-    Run topic research and email the summary to the given recipients.
+    Run topic research and attempt delivery to the configured channels.
 
     Args:
         topic: The research topic. If omitted, the weekday-based default is used.
@@ -73,17 +73,9 @@ def run(
         subject: Optional email subject. Defaults to "Topic Research: {topic}".
 
     Returns:
-        The research summary text that was emailed.
+        The generated research summary, even if delivery fails.
     """
     return run_daily(topic, recipients, subject=subject, store_to_db=store_to_db)["content"]
-
-
-class DailyDeliveryError(RuntimeError):
-    """One or more channels failed; other channels may already have delivered."""
-
-    def __init__(self, result: dict):
-        super().__init__("Daily news generated, but one or more deliveries failed")
-        self.result = result
 
 
 def run_daily(
@@ -94,14 +86,12 @@ def run_daily(
     email_enabled: bool = True,
     whatsapp_enabled: bool = True,
 ) -> dict:
-    """Generate once, archive the content, then attempt each configured channel."""
+    """Generate and archive once; report channel failures without raising them."""
     emails = (os.getenv("RECIPIENT_EMAILS") or "").split() if recipients is None else recipients
     emails = emails if email_enabled else []
     phones = get_phone_recipients() if whatsapp_enabled else []
     if not emails and not phones:
         raise ValueError("Configure RECIPIENT_EMAILS and/or RECEIPENT_PHONE_NUMBERS for an enabled channel")
-    if phones:
-        get_relay_config()  # Fail before generating content if relay settings are missing.
 
     resolved_topic = resolve_topic(topic)
     summary = run_topic_research(resolved_topic)
@@ -129,8 +119,6 @@ def run_daily(
         except Exception:
             logger.exception("Daily %s delivery failed or is unconfirmed", channel)
             result["deliveries"][channel] = "failed_or_unconfirmed"
-    if "failed_or_unconfirmed" in result["deliveries"].values():
-        raise DailyDeliveryError(result)
     return result
 
 
@@ -209,13 +197,14 @@ def main() -> int:
         else:
             topic, recipients = parse_cli_inputs(inputs, explicit_topic=configured_topic)
         resolved_topic = resolve_topic(topic)
-        run(topic, recipients, subject=args.subject, store_to_db=not args.no_db)
+        result = run_daily(topic, recipients, subject=args.subject, store_to_db=not args.no_db)
         print(f"Using topic: {resolved_topic}")
-        print("Research completed and configured deliveries accepted successfully.")
+        print(f"Delivery results: {result['deliveries']}")
+        if "failed_or_unconfirmed" in result["deliveries"].values():
+            print("Research completed with delivery warnings; check the channel errors above.")
+        else:
+            print("Research completed and configured deliveries accepted successfully.")
         return 0
-    except DailyDeliveryError as exc:
-        print(f"Error: {exc}. Delivery results: {exc.result['deliveries']}", file=sys.stderr)
-        return 1
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

@@ -46,4 +46,10 @@ def send_whatsapp(message: str, recipients: list[str]) -> None:
         raise RuntimeError("WhatsApp relay could not be reached; delivery is unconfirmed") from None
     if not 200 <= response.status_code < 300:
         # Response bodies can contain recipient data or credentials.
+        if response.status_code == 404:
+            raise RuntimeError(
+                "WhatsApp relay returned HTTP 404. Check API_PATH and API_POST_PATH: "
+                "their concatenation must be the relay's actual POST endpoint. "
+                "Also confirm the relay service is deployed and the domain points to it."
+            )
         raise RuntimeError(f"WhatsApp relay returned HTTP {response.status_code}")

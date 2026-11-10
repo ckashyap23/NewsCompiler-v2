@@ -37,7 +37,7 @@ class RelayTests(unittest.TestCase):
 
     @patch("daily.whatsapp_connector.requests.post")
     def test_http_errors_and_redirects_are_not_successful_or_retried(self, post):
-        for code in (302, 401, 500):
+        for code in (302, 401, 404, 500):
             post.reset_mock()
             post.return_value.status_code = code
             with self.assertRaisesRegex(RuntimeError, str(code)):
@@ -94,12 +94,44 @@ class DailyTests(unittest.TestCase):
     @patch("daily.orchestrator.store_research_result")
     @patch("daily.orchestrator.run_topic_research", return_value="News")
     def test_email_failure_still_attempts_whatsapp_and_reports_partial_result(self, research, store, email, whatsapp):
-        with self.assertRaises(orchestrator.DailyDeliveryError) as exc:
-            orchestrator.run_daily("AI")
+        with self.assertLogs("daily.orchestrator", level="ERROR"):
+            result = orchestrator.run_daily("AI")
         whatsapp.assert_called_once()
-        self.assertEqual(exc.exception.result["deliveries"], {
+        self.assertEqual(result["deliveries"], {
             "email": "failed_or_unconfirmed", "whatsapp": "accepted",
         })
+
+    @patch("daily.orchestrator.send_whatsapp")
+    @patch("daily.orchestrator.send_email")
+    @patch("daily.orchestrator.run_topic_research", return_value="News")
+    def test_whatsapp_failure_and_both_failures_are_nonfatal(self, research, email, whatsapp):
+        for email_fails in (False, True):
+            with self.subTest(email_fails=email_fails):
+                email.reset_mock()
+                whatsapp.reset_mock()
+                email.side_effect = RuntimeError("Email failed") if email_fails else None
+                whatsapp.side_effect = RuntimeError("Relay failed")
+                with self.assertLogs("daily.orchestrator", level="ERROR"):
+                    result = orchestrator.run_daily("AI", store_to_db=False)
+                email.assert_called_once()
+                whatsapp.assert_called_once()
+                self.assertEqual(result["content"], "News")
+                self.assertEqual(result["deliveries"], {
+                    "email": "failed_or_unconfirmed" if email_fails else "sent",
+                    "whatsapp": "failed_or_unconfirmed",
+                })
+
+    @patch("daily.whatsapp_connector.requests.post")
+    @patch("daily.orchestrator.send_email")
+    @patch("daily.orchestrator.run_topic_research", return_value="News")
+    def test_missing_relay_config_does_not_prevent_email(self, research, email, post):
+        with patch.dict(os.environ, {"BEARER_TOKEN": ""}):
+            with self.assertLogs("daily.orchestrator", level="ERROR"):
+                result = orchestrator.run_daily("AI", store_to_db=False)
+        research.assert_called_once()
+        email.assert_called_once()
+        post.assert_not_called()
+        self.assertEqual(result["deliveries"], {"email": "sent", "whatsapp": "failed_or_unconfirmed"})
 
     @patch("daily.orchestrator.send_email")
     @patch("daily.orchestrator.send_whatsapp")
@@ -146,7 +178,7 @@ class EmailTests(unittest.TestCase):
         smtp.return_value.__enter__.return_value.send_message.return_value = {
             "refused@example.com": (550, b"Rejected"),
         }
-        with patch.dict(os.environ, {"GMAIL_EMAIL": "sender@example.com", "GMAIL_APP_PASSWORD": "fake"}):
+        with patch.dict(os.environ, {"EMAIL_PROVIDER": "gmail", "GMAIL_EMAIL": "sender@example.com", "GMAIL_APP_PASSWORD": "fake"}):
             with self.assertRaisesRegex(RuntimeError, "refused"):
                 send_email.send_email("News", ["accepted@example.com", "refused@example.com"])
         fallback.assert_not_called()
@@ -185,10 +217,24 @@ class EndpointTests(unittest.TestCase):
 
     @patch("api.run_daily")
     def test_partial_failure_response(self, daily):
-        daily.side_effect = orchestrator.DailyDeliveryError({"deliveries": {"whatsapp": "accepted", "email": "failed_or_unconfirmed"}})
+        daily.return_value = {"deliveries": {"whatsapp": "accepted", "email": "failed_or_unconfirmed"}}
         response = self.client.post("/daily-news", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "completed_with_delivery_errors")
+        self.assertEqual(response.json()["deliveries"]["whatsapp"], "accepted")
+
+    @patch("api.run_daily", return_value={"deliveries": {"email": "failed_or_unconfirmed", "whatsapp": "failed_or_unconfirmed"}})
+    def test_both_delivery_failures_return_success_with_channel_results(self, daily):
+        response = self.client.post("/daily-news", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "completed_with_delivery_errors")
+        self.assertEqual(response.json()["deliveries"], daily.return_value["deliveries"])
+
+    @patch("api.run_daily", side_effect=RuntimeError("Research failed"))
+    def test_generation_failure_still_returns_error(self, daily):
+        with self.assertLogs("api", level="ERROR"):
+            response = self.client.post("/daily-news", headers=self.headers)
         self.assertEqual(response.status_code, 502)
-        self.assertEqual(response.json()["detail"]["deliveries"]["whatsapp"], "accepted")
 
     @patch("api.generate_weekly_digest", return_value={"newsletter_title": "Weekly"})
     def test_weekly_posts_without_email_and_validates_days(self, weekly):

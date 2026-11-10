@@ -12,7 +12,7 @@ from shared.paths import ENV_PATH
 
 load_dotenv(dotenv_path=ENV_PATH)
 
-from daily.orchestrator import DailyDeliveryError, run_daily
+from daily.orchestrator import run_daily
 from weekly.digest import generate_weekly_digest
 
 logger = logging.getLogger(__name__)
@@ -56,18 +56,13 @@ def daily_news(request: DailyRequest | None = None) -> dict:
             email_enabled=options.email,
             whatsapp_enabled=options.whatsapp,
         )
-    except DailyDeliveryError as exc:
-        raise HTTPException(502, detail={
-            "message": str(exc),
-            **exc.result,
-            "retry_warning": "Some deliveries may have succeeded. Retrying generates and sends new content.",
-        }) from None
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
     except Exception:
         logger.exception("Daily news failed")
         raise HTTPException(502, "Daily news failed; check server logs before retrying") from None
-    return {"status": "completed", **result}
+    delivery_failed = "failed_or_unconfirmed" in result.get("deliveries", {}).values()
+    return {"status": "completed_with_delivery_errors" if delivery_failed else "completed", **result}
 
 
 @app.post("/weekly-digest", dependencies=[Depends(authenticate)])
